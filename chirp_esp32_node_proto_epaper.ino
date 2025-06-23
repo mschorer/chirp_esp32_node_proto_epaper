@@ -119,6 +119,7 @@ LoraNode *localNode;
 struct climHist {
   LoraBME280 bme[ HIST_DEPTH];
   int8_t current;
+  int8_t last;
 };
 
 struct tofNode {
@@ -164,27 +165,29 @@ void initData( dataMem* data) {
   data->ibc.fill.percent = 0;
   data->ibc.bme.temp = 250;
   data->ibc.bme.hmd = 500;
-  data->ibc.bme.prs = 9990;
+  data->ibc.bme.prs = 9500;
 
   for ( i=0; i < HIST_DEPTH; i++) {
     data->ibc.hist.bme[i].temp = 250;
     data->ibc.hist.bme[i].hmd = 500;
-    data->ibc.hist.bme[i].prs = 10000;
+    data->ibc.hist.bme[i].prs = 9500;
   }
   data->ibc.hist.current = -1;
+  data->ibc.hist.last = 0;
 
   data->well.tof.dist = -1;
   data->well.fill.percent = 0;
   data->well.bme.temp = 250;
   data->well.bme.hmd = 500;
-  data->well.bme.prs = 10000;
+  data->well.bme.prs = 9500;
 
   for ( i=0; i < HIST_DEPTH; i++) {
     data->well.hist.bme[i].temp = 250;
     data->well.hist.bme[i].hmd = 500;        //(uint16_t) random( 500, 1000);
-    data->well.hist.bme[i].prs = 10000; //(uint16_t) random( 9500, 11000);;
+    data->well.hist.bme[i].prs = 9500; //(uint16_t) random( 9500, 11000);;
   }
   data->well.hist.current = -1;
+  data->well.hist.last = 0;
 }
 
 //-------------------------------------------------------
@@ -213,10 +216,33 @@ void drawHBar( uint8_t x,  uint8_t y, uint8_t w, uint8_t h, uint8_t fill) {
   display.drawRect( x+fill, y, w-fill, h, DEFAULT_TEXT_COLOR);
 }
 
-void drawLevels( LoraToF *ibc, LoraToF *well) {
+void drawFill( LoraFill *ibc, LoraFill *well) {
   uint8_t y = 150;
   display.setFont( NULL);
   
+  uint8_t headroom = 0;
+  if ( ibc) {
+    if ( ibc->percent > 0) {
+      headroom = 100 - min( 100, ibc->percent / 100);
+    }
+  }
+  drawVBar( 8, y, 40, 100, headroom);
+  //sprintAt( 10, y-8, "IBC");
+
+  headroom = 0;
+  if ( well) {
+    if ( well->percent > 0) {
+      headroom = 100 - min( 100, well->percent / 100);
+    }
+  }
+  drawVBar( 62, y, 55, 100, headroom);
+  //sprintAt( 70, y-8, "Well");
+}
+
+void drawLevels( LoraToF *ibc, LoraToF *well) {
+  uint8_t y = 150;
+  display.setFont( NULL);
+/*  
   uint8_t headroom = 100;
   if ( ibc) {
     if ( ibc->dist > 0) {
@@ -224,8 +250,9 @@ void drawLevels( LoraToF *ibc, LoraToF *well) {
     }
   }
   drawVBar( 8, y, 40, 100, headroom);
-  sprintAt( 10, y-8, "IBC");
-
+*/
+  sprintAt( 10, y-8, "% 4i", ibc->dist);
+/*
   headroom = 100;
   if ( well) {
     if ( well->dist > 0) {
@@ -233,7 +260,8 @@ void drawLevels( LoraToF *ibc, LoraToF *well) {
     }
   }
   drawVBar( 62, y, 55, 100, headroom);
-  sprintAt( 70, y-8, "Well");
+*/
+  sprintAt( 70, y-8, "% 4i", well->dist);
 }
 
 void drawBME( uint8_t x, uint8_t y, LoraBME280 *bme, char* name) {
@@ -254,34 +282,49 @@ void drawBME( uint8_t x, uint8_t y, LoraBME280 *bme, char* name) {
 
 void drawHist( uint8_t x, uint8_t y, climHist *hist, char* name) {
   int8_t i, idx, start;
-  uint16_t min=12000, max=100;
-  float scale;
+  uint16_t minP=12000, maxP=100, mid;
+  float scale,yp;
 
   display.drawRect( x, y, 122, 52, DEFAULT_TEXT_COLOR);
 
   display.setFont( NULL); //DEFAULT_FONT);
   sprintAt( x+2, y+2, name);
 
-  idx = (hist->current +1) % HIST_DEPTH;
-  start = 122 - HIST_DEPTH;
-  for( i=0; i<HIST_DEPTH; i++) {
-    if ( i % 2) display.drawPixel( start, y+51-hist->bme[idx].hmd/20, DEFAULT_TEXT_COLOR);
-    idx = (idx+1) % HIST_DEPTH;
-    start++;
+  Serial.printf("hist % 3i - % 3i\n", hist->current, hist->last);
 
-    if ( hist->bme[idx].prs > max) max = hist->bme[idx].prs;
-    if ( hist->bme[idx].prs < min) min = hist->bme[idx].prs;
-  }
+  if ( hist->current >= 0) {
+    idx = hist->last;
+    for( i=0; i<HIST_DEPTH; i++) {
+      if ( hist->bme[idx].prs > maxP) maxP = hist->bme[idx].prs;
+      if ( hist->bme[idx].prs < minP) minP = hist->bme[idx].prs;
 
-  idx = (hist->current +1) % HIST_DEPTH;
-  start = 122 - HIST_DEPTH;
-  scale = (max == min) ? 1 : (50.0 / (float)(max - min));
+      if ( i % 2) display.drawPixel( i+1, y+51-hist->bme[idx].hmd/20, DEFAULT_TEXT_COLOR);
 
-  Serial.printf("PRS %f / %i / %i\n", scale, min, max);
-  for( i=0; i<HIST_DEPTH; i++) {
-    display.drawPixel( start, y+50-(hist->bme[idx].prs-min)*scale, DEFAULT_TEXT_COLOR);
-    idx = (idx+1) % HIST_DEPTH;
-    start++;
+      if ( idx == hist->current)
+        break;
+
+      idx = (idx+1) % HIST_DEPTH;
+    }
+
+    idx = hist->last;
+    scale = (maxP == minP) ? 1 : (50.0 / (float)(maxP - minP));
+    scale = min( (float)10.0, scale);
+    mid = (maxP == minP) ? minP : (maxP + minP) / 2;
+
+    Serial.printf("PRS %f / %i / %i\n[", scale, minP, maxP);
+    for( i=0; i<HIST_DEPTH; i++) {
+      yp = (float)(hist->bme[idx].prs-mid)*scale;
+      display.drawPixel( i+1, y+25-yp, DEFAULT_TEXT_COLOR);
+
+      Serial.printf("%i ", (int16_t) yp);
+      if ( i%12 == 11) Serial.println();
+
+      if ( idx == hist->current)
+        break;
+
+      idx = (idx+1) % HIST_DEPTH;
+    }
+    Serial.println("]");
   }
 }
 
@@ -586,6 +629,7 @@ void setup() {
   // Retrieve the last uplink frame counter
   uint32_t fCntUp = node->getFCntUp();
   Serial.println( "FCNTUP "+String( fCntUp));
+  sprintAt( 2, 68, "%i", fCntUp);
 
   //up.printBuffer();
 
@@ -607,7 +651,7 @@ void setup() {
   } else if (state > 0) {
   // Check if a downlink was received 
   // (state 0 = no downlink, state 1/2 = downlink in window Rx1/Rx2)
-    Serial.printf("OK. Downlink data! [%i]\n", state);
+    Serial.printf("OK. Downlink data! [%i] #%i\n", state, down.eod);
 
     // Did we get a downlink with data for us
     if ( down.eod > 0) {
@@ -639,6 +683,7 @@ void setup() {
   drawHist( 0, 25, &cache.data.well.hist, "Well");
 
   drawLevels( &cache.data.ibc.tof, &cache.data.well.tof);
+  drawFill( &cache.data.ibc.fill, &cache.data.well.fill);
 
   //display.display();
   display.update();
@@ -657,6 +702,16 @@ void handleDownlink( SensorData *down) {
 
   while( index < down->eod) {
     switch( down->buffer[ index]) {
+      case SensorData::SensorType::EOL:
+        index += sizeof( LoraSensor);
+        Serial.println( "  eol");
+      break;
+
+      case SensorData::SensorType::ID:
+        index += sizeof( LoraID);
+        Serial.println( "  id");
+      break;
+
       case SensorData::SensorType::NODE:
         node = (LoraNode *) &down->buffer[index];
         index += sizeof( LoraNode);
@@ -679,6 +734,11 @@ void handleDownlink( SensorData *down) {
         }
       break;
 
+      case SensorData::SensorType::DS18B20:
+        index += sizeof( LoraDS18B20);
+        Serial.println( "  ds18b20");
+      break;
+
       case SensorData::SensorType::BME280:
         bme = (LoraBME280 *) &down->buffer[index];
         index += sizeof( LoraBME280);
@@ -688,7 +748,14 @@ void handleDownlink( SensorData *down) {
           case 0:
             memcpy( &cache.data.ibc.bme, bme, sizeof( LoraBME280));
 
-            cache.data.ibc.hist.current = (cache.data.ibc.hist.current+1) % HIST_DEPTH;
+            if ( cache.data.ibc.hist.current < 0) {
+              cache.data.ibc.hist.current = 0;
+            } else {
+              cache.data.ibc.hist.current = (cache.data.ibc.hist.current+1) % HIST_DEPTH;
+              if ( cache.data.ibc.hist.current == cache.data.ibc.hist.last)
+                cache.data.ibc.hist.last = (cache.data.ibc.hist.last+1) % HIST_DEPTH;
+            }
+
             memcpy( &cache.data.ibc.hist.bme[ cache.data.ibc.hist.current], bme, sizeof( LoraBME280));
             //cache.data.ibc.tof.dist = 550;
           break;
@@ -696,7 +763,14 @@ void handleDownlink( SensorData *down) {
           case 1:
             memcpy( &cache.data.well.bme, bme, sizeof( LoraBME280));
 
-            cache.data.well.hist.current = (cache.data.well.hist.current+1) % HIST_DEPTH;
+            if ( cache.data.well.hist.current < 0) {
+              cache.data.well.hist.current = 0;
+            } else {
+              cache.data.well.hist.current = (cache.data.well.hist.current+1) % HIST_DEPTH;
+              if ( cache.data.well.hist.current == cache.data.well.hist.last)
+                cache.data.well.hist.last = (cache.data.well.hist.last+1) % HIST_DEPTH;
+            }
+
             memcpy( &cache.data.well.hist.bme[ cache.data.well.hist.current], bme, sizeof( LoraBME280));
             //cache.data.well.tof.dist = 2123;
           break;
@@ -737,6 +811,11 @@ void handleDownlink( SensorData *down) {
         //Serial.println( "TOF parsed");
         //Serial.println( tof->dist);
         i++;
+      break;
+
+      case SensorData::SensorType::GPS:
+        index += sizeof( LoraGps);
+        Serial.println( "  gps");
       break;
 
       case SensorData::SensorType::FILL:
@@ -938,6 +1017,8 @@ void arrayDump(uint8_t *buffer, uint16_t len) {
     if(b < 0x10) { Serial.print('0'); }
     Serial.print(b, HEX);
     Serial.print(' ');
+
+    if ( c % 8 == 7) Serial.println();
   }
   Serial.println();
 }
