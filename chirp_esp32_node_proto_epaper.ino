@@ -77,11 +77,29 @@ SX1262 radio = new Module(PIN_LORA_NSS, PIN_LORA_DIO_1, PIN_LORA_NRST, PIN_LORA_
 LCMEN2R13EFC1 display;    // V1.0
 // QYEG0213RWS800 display;
 
+// Pause between sends in seconds, so this is every 15 minutes. (Delay will be
+// longer if regulatory or TTN Fair Use Policy requires it.)
+#define MINIMUM_DELAY 300
+
+#define RELAX_DELAY 120
+#define RELAX_FB    3
+
+#define ALERT_DELAY 60
+#define ALERT_FB    3
+
+#define EMERG_DELAY 30
+#define EMERG_FB    10
+
+#define AUTO_FALLBACK 16
+
 #define LORA_DUTY_CYCLE 0     // for legal limit: 0, forTTN: 1250
 
 // Pause between sends in seconds, so this is every 15 minutes. (Delay will be
 // longer if regulatory or TTN Fair Use Policy requires it.)
 #define MINIMUM_DELAY 300
+
+RTC_DATA_ATTR uint16_t loraDelay = MINIMUM_DELAY;
+RTC_DATA_ATTR uint16_t loraDlyFb = 0;
 
 // you can also retrieve additional information about an uplink or 
 // downlink by passing a reference to LoRaWANEvent_t structure
@@ -166,12 +184,13 @@ void initData( dataMem* data) {
   data->ibc.bme.temp = 250;
   data->ibc.bme.hmd = 500;
   data->ibc.bme.prs = 9500;
-
+/*
   for ( i=0; i < HIST_DEPTH; i++) {
     data->ibc.hist.bme[i].temp = 250;
     data->ibc.hist.bme[i].hmd = 500;
     data->ibc.hist.bme[i].prs = 9500;
   }
+*/
   data->ibc.hist.current = -1;
   data->ibc.hist.last = 0;
 
@@ -180,12 +199,13 @@ void initData( dataMem* data) {
   data->well.bme.temp = 250;
   data->well.bme.hmd = 500;
   data->well.bme.prs = 9500;
-
+/*
   for ( i=0; i < HIST_DEPTH; i++) {
     data->well.hist.bme[i].temp = 250;
     data->well.hist.bme[i].hmd = 500;        //(uint16_t) random( 500, 1000);
     data->well.hist.bme[i].prs = 9500; //(uint16_t) random( 9500, 11000);;
   }
+*/
   data->well.hist.current = -1;
   data->well.hist.last = 0;
 }
@@ -206,12 +226,17 @@ void sprintAt( int16_t x, int16_t y, char *fmt, ...) {
   display.print( gstring);
 }
 
-void drawVBar( uint8_t x,  uint8_t y, uint8_t w, uint8_t h, uint8_t headroom) {
-  display.drawRect( x, y, w, headroom, DEFAULT_TEXT_COLOR);
-  display.fillRect( x, y+headroom, w, h-headroom, DEFAULT_TEXT_COLOR);
+void drawVBar( uint8_t x,  uint8_t y, uint8_t w, uint8_t h, int8_t headroom) {
+  if ( headroom >= 0) {
+    display.drawRect( x, y, w, headroom, DEFAULT_TEXT_COLOR);
+    display.fillRect( x, y+headroom, w, h-headroom, DEFAULT_TEXT_COLOR);
+  } else {
+    display.drawRect( x, y, w, h, DEFAULT_TEXT_COLOR);
+    display.drawLine( x, y, x+w, y+h, DEFAULT_TEXT_COLOR);
+  }
 }
 
-void drawHBar( uint8_t x,  uint8_t y, uint8_t w, uint8_t h, uint8_t fill) {
+void drawHBar( uint8_t x,  uint8_t y, uint8_t w, uint8_t h, int8_t fill) {
   display.fillRect( x, y, fill, h, DEFAULT_TEXT_COLOR);
   display.drawRect( x+fill, y, w-fill, h, DEFAULT_TEXT_COLOR);
 }
@@ -220,22 +245,22 @@ void drawFill( LoraFill *ibc, LoraFill *well) {
   uint8_t y = 150;
   display.setFont( NULL);
   
-  uint8_t headroom = 0;
+  int8_t headroom = -1;
   if ( ibc) {
     if ( ibc->percent > 0) {
       headroom = 100 - min( 100, ibc->percent / 100);
     }
   }
-  drawVBar( 8, y, 40, 100, headroom);
+  drawVBar( 11, y, 40, 100, headroom);
   //sprintAt( 10, y-8, "IBC");
 
-  headroom = 0;
+  headroom = -1;
   if ( well) {
     if ( well->percent > 0) {
       headroom = 100 - min( 100, well->percent / 100);
     }
   }
-  drawVBar( 62, y, 55, 100, headroom);
+  drawVBar( 66, y, 54, 100, headroom);
   //sprintAt( 70, y-8, "Well");
 }
 
@@ -251,7 +276,7 @@ void drawLevels( LoraToF *ibc, LoraToF *well) {
   }
   drawVBar( 8, y, 40, 100, headroom);
 */
-  sprintAt( 10, y-8, "% 4i", ibc->dist);
+  sprintAt( 14, y-8, "% 4i", ibc->dist);
 /*
   headroom = 100;
   if ( well) {
@@ -261,14 +286,14 @@ void drawLevels( LoraToF *ibc, LoraToF *well) {
   }
   drawVBar( 62, y, 55, 100, headroom);
 */
-  sprintAt( 70, y-8, "% 4i", well->dist);
+  sprintAt( 78, y-8, "% 4i", well->dist);
 }
 
 void drawBME( uint8_t x, uint8_t y, LoraBME280 *bme, char* name) {
-  display.drawRect( x, y, 60, 60, DEFAULT_TEXT_COLOR);
+  //display.drawRect( x, y, 60, 60, DEFAULT_TEXT_COLOR);
 
   display.setFont( NULL); //DEFAULT_BOLD);
-  sprintAt( x+2, y+2/*14*/, name);
+  sprintAt( x+3, y+3, name);
 
   //display.setFont( NULL);
   if ( bme) {
@@ -308,7 +333,7 @@ void drawHist( uint8_t x, uint8_t y, climHist *hist, char* name) {
 
     idx = hist->last;
     scale = (maxP == minP) ? 1 : (50.0 / (float)(maxP - minP));
-    scale = min( (float)10.0, scale);
+    scale = min( (float) 1.0, scale);
     mid = (maxP == minP) ? minP : (maxP + minP) / 2;
 
     Serial.printf("PRS %f / %i / %i\n[", scale, minP, maxP);
@@ -330,6 +355,7 @@ void drawHist( uint8_t x, uint8_t y, climHist *hist, char* name) {
 
 void drawNode( uint8_t x, uint8_t y, LoraNode *node, char* name) {
   uint8_t batLevel = 0;
+  char status = '.';
 
   display.setFont( NULL);
   if ( node) {
@@ -339,6 +365,12 @@ void drawNode( uint8_t x, uint8_t y, LoraNode *node, char* name) {
     } else {
         sprintAt( 40, y, "-.--V" );
     }
+    switch( node->meta & STS_MMASK) {
+      case STS_EMERG: status = '*'; break;
+      case STS_ALERT: status = '+'; break;
+      case STS_RELAX: status = '-'; break;
+    }
+    sprintAt( 30, y, "%c", status);
   }
   drawHBar( 72, y+1, 50, 5, batLevel);
   sprintAt( 0, y, name);
@@ -365,39 +397,7 @@ void heltec_led(int percent) {
 void heltec_deep_sleep(int seconds = 0) {
   
   //radio.sleep();
-#if 1
   Platform::prepareToSleep();
-#else
-  // Turn off external power
-  heltec_ve(false);
-  // Turn off LED
-  heltec_led(0);
-
-  // Set all pins to input to save power
-  pinMode(VBAT_CTRL, INPUT);
-  pinMode(VBAT_ADC, INPUT);
-
-  pinMode(PIN_LORA_DIO_1, INPUT);
-  pinMode(PIN_LORA_NRST, INPUT);
-  pinMode(PIN_LORA_BUSY, INPUT);
-  pinMode(SS, INPUT);
-  pinMode(MISO, INPUT);
-  pinMode(MOSI, INPUT);
-  pinMode(SCK, INPUT);
-/*
-  // LoRa pins to high-impedance
-  pinMode(PIN_LORA_NRST, ANALOG);
-  pinMode(PIN_LORA_BUSY, ANALOG);
-  pinMode(PIN_LORA_SCK, ANALOG);
-  pinMode(PIN_LORA_MISO, ANALOG);
-  pinMode(PIN_LORA_MOSI, ANALOG);
-
-  // LoRa CS (RADIO_NSS) needs to stay HIGH, even during deep sleep
-  pinMode(PIN_LORA_NSS, OUTPUT);
-  digitalWrite(PIN_LORA_NSS, HIGH);
-  gpio_hold_en((gpio_num_t) PIN_LORA_NSS);    // "stay where you're told"
-*/
-#endif
 
   if (seconds) {
       esp_sleep_enable_timer_wakeup((uint64_t) 1000 * 1000 * seconds);  // Microseconds
@@ -511,7 +511,8 @@ void heltec_setup() {
 
   //display.drawRect( 200, 1, 48, 120, DEFAULT_TEXT_COLOR);
 
-  gpio_hold_dis((gpio_num_t) PIN_LORA_NSS);
+  // no longer needed as fixed in lib
+  // gpio_hold_dis((gpio_num_t) PIN_LORA_NSS);
 }
 
 void heltec_loop() {
@@ -537,7 +538,7 @@ void setup() {
   // Obtain directly after deep sleep
   // May or may not reflect room temperature, sort of. 
   float temp = heltec_temperature();
-  //Serial.printf("Temperature: %.1f °C\n", temp);
+  //Serial.printf("Temperature: %.1f C\n", temp);
 
   analogReadResolution(12);
   
@@ -560,7 +561,7 @@ void setup() {
   uint8_t battLevel = 0;
   battLevel = int((float)vperc * 2.54);
 
-  Serial.printf("%.1f°C / %.2fV / %3i%% / %i\n", temp, vbat, vperc, battLevel);
+  Serial.printf("%.1fC / %.2fV / %3i%% / %i\n", temp, vbat, vperc, battLevel);
 
   //sprintAt( 0, 0, "Node\n%.1fC %.2fV %3i%%", temp, vbat, vperc);
   // prepare data -----------------------------
@@ -629,9 +630,16 @@ void setup() {
   // Retrieve the last uplink frame counter
   uint32_t fCntUp = node->getFCntUp();
   Serial.println( "FCNTUP "+String( fCntUp));
-  sprintAt( 2, 68, "%i", fCntUp);
 
-  //up.printBuffer();
+  uint32_t mask = 0x01;
+  uint32_t bitX = 0;
+  for( uint8_t i = 0; i < 32; i++) {
+    if (fCntUp & mask) display.fillRect( bitX, 77, 4, 3, DEFAULT_TEXT_COLOR);
+    bitX += 4;
+    mask <<= 1;
+  }
+  if (fCntUp & 0x40000000) display.fillRect( 120, 77, 1, 3, DEFAULT_TEXT_COLOR);
+  if (fCntUp & 0x80000000) display.fillRect( 121, 77, 1, 3, DEFAULT_TEXT_COLOR);
 
   size_t downlinkSize = DOWN_SIZE;
   if(fCntUp == 1) {
@@ -659,11 +667,13 @@ void setup() {
       arrayDump( down.buffer, down.eod);
 
       handleDownlink( &down);
+
+      persistData( &cache);
     } else {
       Serial.println(F("<MAC commands only>"));
     }
 
-    dumpDownlinkStats( state);
+    //dumpDownlinkStats( state);
 
     //heltec_led(LED_BRIGHT);
   } else {
@@ -674,16 +684,21 @@ void setup() {
   //-------
   heltec_led(LED_LOW);
 
+  display.drawLine( 0, 79, 122, 79, DEFAULT_TEXT_COLOR);
+  display.drawLine( 61, 80, 61, 252, DEFAULT_TEXT_COLOR);
+
   drawNode( 0, 8, &cache.data.ibc.node, "IBC");
   drawBME(  0, 80, &cache.data.ibc.bme, "IBC");
 
   drawNode( 0, 16,&cache.data.well.node, "Well");
-  drawBME( 61, 80,&cache.data.well.bme, "Well");
+  drawBME( 62, 80,&cache.data.well.bme, "Well");
 
   drawHist( 0, 25, &cache.data.well.hist, "Well");
 
   drawLevels( &cache.data.ibc.tof, &cache.data.well.tof);
   drawFill( &cache.data.ibc.fill, &cache.data.well.fill);
+
+  heltec_led(LED_OFF);
 
   //display.display();
   display.update();
@@ -694,22 +709,24 @@ void setup() {
 void handleDownlink( SensorData *down) {
   uint8_t index = 0;
   uint8_t i = 0;
-  uint8_t rmt;
+  uint8_t rmt, newMeta;;
   LoraToF* tof = 0;
   LoraFill* fill = 0;
   LoraNode* node = 0;
   LoraBME280 *bme = 0;
 
+  Serial.printf( "Downlink  [%i]:\n", down->eod);
+
   while( index < down->eod) {
     switch( down->buffer[ index]) {
       case SensorData::SensorType::EOL:
         index += sizeof( LoraSensor);
-        Serial.println( "  eol");
+        Serial.println( "EOL");
       break;
 
       case SensorData::SensorType::ID:
         index += sizeof( LoraID);
-        Serial.println( "  id");
+        Serial.println( "ID");
       break;
 
       case SensorData::SensorType::NODE:
@@ -717,7 +734,10 @@ void handleDownlink( SensorData *down) {
         index += sizeof( LoraNode);
         rmt = (node->meta & 0x1f);
 
-        Serial.printf( "node %i: %.2fV %.1f°C\n", rmt, (float) node->vbat /100, (float)node->cputemp /10);
+        newMeta = max( localNode->meta, (uint8_t) (node->meta & STS_MMASK));
+        localNode->meta = newMeta;
+
+        Serial.printf( "Node %i: %.2fV %.1fC [%02x]\n", rmt, (float) node->vbat /100, (float)node->cputemp /10, newMeta);
         //sprintAt( 0, rmt*50, "remote %i\n%.2fV %.1fC\n", rmt, (float) node->vbat /100, (float)node->cputemp /10);
 
         switch( rmt) {
@@ -779,9 +799,9 @@ void handleDownlink( SensorData *down) {
             ;
         }
 
-        Serial.printf( "BME %i: %i C\n", rmt, bme->temp);
-        Serial.printf( "     : %i h\n", bme->hmd);
-        Serial.printf( "     : %i p\n", bme->prs);
+        Serial.printf( "BME  %i: %i C\n", rmt, bme->temp);
+        Serial.printf( "      : %i h\n", bme->hmd);
+        Serial.printf( "      : %i p\n", bme->prs);
         i++;
       break;
       
@@ -805,9 +825,9 @@ void handleDownlink( SensorData *down) {
             ;
         }
 
-        Serial.printf( "tof %i: %imm\n", rmt, tof->dist);
-        Serial.printf( "    %i: %imm\n", 0, cache.data.ibc.tof.dist);
-        Serial.printf( "    %i: %imm\n", 1, cache.data.well.tof.dist);
+        Serial.printf( "ToF  %i: %imm\n", rmt, tof->dist);
+        //Serial.printf( "     %i: %imm\n", 0, cache.data.ibc.tof.dist);
+        //Serial.printf( "     %i: %imm\n", 1, cache.data.well.tof.dist);
         //Serial.println( "TOF parsed");
         //Serial.println( tof->dist);
         i++;
@@ -836,21 +856,19 @@ void handleDownlink( SensorData *down) {
             ;
         }
 
-        Serial.printf( "fill %i: %i%%\n", rmt, fill->percent);
-        Serial.printf( "     %i: %i%%\n", 0, cache.data.ibc.fill.percent);
-        Serial.printf( "     %i: %i%%\n", 1, cache.data.well.fill.percent);
+        Serial.printf( "Fill %i: %i%%\n", rmt, fill->percent/100);
+        //Serial.printf( "     %i: %i%%\n", 0, cache.data.ibc.fill.percent);
+        //Serial.printf( "     %i: %i%%\n", 1, cache.data.well.fill.percent);
         //Serial.println( "TOF parsed");
         //Serial.println( tof->dist);
         i++;
       break;
 
       default:
-        Serial.println( "xTra data.");
+        Serial.printf( "xTra data. @%i [%02x] [%c]\n", index, down->buffer[ index], down->buffer[ index]);
         index = down->eod;
     }
   }
-
-  persistData( &cache);
 }
 
 //-------------------------------------------------------------------
@@ -863,8 +881,7 @@ void loop() {
 
 void goToSleep() {
   uint32_t interval = 0;
-
-  heltec_led(LED_OFF);
+  char* mState[] = { "DCARE", "RELAX", "ALERT", "EMERG"};
 
   // allows recall of the session after deepsleep
   if ( node) {
@@ -873,12 +890,80 @@ void goToSleep() {
     // Calculate minimum duty cycle delay (per FUP & law!)
     interval = node->timeUntilUplink();
   }
-  // And then pick it or our MINIMUM_DELAY, whichever is greater
-  uint32_t delayMs = max(interval, (uint32_t)MINIMUM_DELAY * 1000);
 
-  Serial.printf("DeepSleep for %i s", delayMs/1000);
+  // -------------------
+
+  uint8_t meta = localNode->meta & STS_MMASK;
+  switch( meta) {
+    case STS_EMERG:
+      loraDelay = EMERG_DELAY;
+      loraDlyFb = EMERG_FB;
+    break;
+
+    case STS_ALERT:
+      loraDelay = ALERT_DELAY;
+      loraDlyFb = ALERT_FB;
+    break;
+
+    case STS_RELAX:
+      loraDelay = RELAX_DELAY;
+      loraDlyFb = RELAX_FB;
+    break;
+
+    case STS_DCARE:
+    default:
+      loraDelay = MINIMUM_DELAY;
+      loraDlyFb = 0;
+  }
+
+  if ( loraDlyFb > 0) {
+    loraDlyFb--;
+  } else {
+    loraDelay = MINIMUM_DELAY;
+  }
+
+  // And then pick it or our MINIMUM_DELAY, whichever is greater
+  uint32_t delayMs = max(interval, (uint32_t) loraDelay * 1000);
+
+  Serial.printf("DeepSleep for [%s] [%d]-[%dk @%d]\n", mState[ STS_MSHIFT(meta)], interval, loraDelay, loraDlyFb);
+  Serial.println( "----");
+
+  delayMs = blinkMode( meta, delayMs);
+
   // and off to bed we go
   heltec_deep_sleep(delayMs/1000);
+}
+
+uint32_t blinkMode( uint8_t meta, uint32_t delayMs) {
+  uint8_t loops = 0;
+  //Serial.printf( "metamode [%02x]\n", meta);
+
+  while( loops < 64) {
+    //Serial.printf("(%d)", loops);
+
+    switch( loops % 8) {
+      case 6:
+        if ( meta < STS_EMERG) break;
+      case 4:
+        if ( meta < STS_ALERT) break;
+      case 2:
+        if ( meta < STS_RELAX) break;
+      case 0:
+        //Serial.printf( "[%i]", loops);
+        heltec_led( LED_LOW);
+        break;
+
+      default:
+        heltec_led(LED_OFF);
+        //Serial.printf( "#%i#", loops);
+    }
+
+    loops++;
+    delayMs -= 100;
+    delay( 100);
+  }
+
+  return delayMs;
 }
 
 // result code to text - these are error codes that can be raised when using LoRaWAN
@@ -925,10 +1010,12 @@ String stateDecode(const int16_t result) {
     return "RADIOLIB_ERR_COMMAND_QUEUE_ITEM_NOT_FOUND";
   case RADIOLIB_ERR_JOIN_NONCE_INVALID:
     return "RADIOLIB_ERR_JOIN_NONCE_INVALID";
-  case RADIOLIB_ERR_N_FCNT_DOWN_INVALID:
-    return "RADIOLIB_ERR_N_FCNT_DOWN_INVALID";
-  case RADIOLIB_ERR_A_FCNT_DOWN_INVALID:
-    return "RADIOLIB_ERR_A_FCNT_DOWN_INVALID";
+  /*
+  case RADIOLIB_ERR_MIC_MISMATCH:
+    return "RADIOLIB_ERR_MIC_MISMATCH";
+  case RADIOLIB_ERR_MULTICAST_FCNT_INVALID:
+    return "RADIOLIB_ERR_MULTICAST_FCNT_INVALID";
+  */
   case RADIOLIB_ERR_DWELL_TIME_EXCEEDED:
     return "RADIOLIB_ERR_DWELL_TIME_EXCEEDED";
   case RADIOLIB_ERR_CHECKSUM_MISMATCH:
@@ -943,6 +1030,10 @@ String stateDecode(const int16_t result) {
     return "RADIOLIB_ERR_NONCES_DISCARDED";
   case RADIOLIB_ERR_SESSION_DISCARDED:
     return "RADIOLIB_ERR_SESSION_DISCARDED";
+
+  default:
+    Serial.printf( "ERR: [%i]\n", result);
+    return "---";
   }
   return "See https://jgromes.github.io/RadioLib/group__status__codes.html";
 }
