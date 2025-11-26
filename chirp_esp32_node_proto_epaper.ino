@@ -98,9 +98,6 @@ LCMEN2R13EFC1 display;    // V1.0
 // longer if regulatory or TTN Fair Use Policy requires it.)
 #define MINIMUM_DELAY 300
 
-RTC_DATA_ATTR uint16_t loraDelay = MINIMUM_DELAY;
-RTC_DATA_ATTR uint16_t loraDlyFb = 0;
-
 // you can also retrieve additional information about an uplink or 
 // downlink by passing a reference to LoRaWANEvent_t structure
 LoRaWANEvent_t uplinkDetails;
@@ -151,6 +148,8 @@ struct tofNode {
 struct dataMem {
   tofNode well;
   tofNode ibc;
+  uint16_t loraDelay;
+  uint16_t loraDlyFb;
 };
 
 #define RTC_BLOCK_OFFSET 64
@@ -208,6 +207,9 @@ void initData( dataMem* data) {
 */
   data->well.hist.current = -1;
   data->well.hist.last = 0;
+
+  data->loraDelay = MINIMUM_DELAY;
+  data->loraDlyFb = 0;
 }
 
 //-------------------------------------------------------
@@ -291,6 +293,7 @@ void drawLevels( LoraToF *ibc, LoraToF *well) {
 
 void drawBME( uint8_t x, uint8_t y, LoraBME280 *bme, char* name) {
   //display.drawRect( x, y, 60, 60, DEFAULT_TEXT_COLOR);
+  uint8_t decimal = bme->temp % 10;
 
   display.setFont( NULL); //DEFAULT_BOLD);
   sprintAt( x+3, y+3, name);
@@ -298,9 +301,12 @@ void drawBME( uint8_t x, uint8_t y, LoraBME280 *bme, char* name) {
   //display.setFont( NULL);
   if ( bme) {
     display.setFont( DEFAULT_FONT);
-    sprintAt( x+1, y+24, "% 4.1f", (float)bme->temp / 10);
-    sprintAt( x+1, y+40, "%%%4.0f", (float)bme->hmd / 10);
-    sprintAt( x+1, y+56, " %4.0f", (float)bme->prs / 10);
+    sprintAt( x+8, y+24, "% 4.0f", (float)bme->temp / 10);
+    sprintAt( x+8, y+40, "%%%3.0f", (float)bme->hmd / 10);
+    sprintAt( x+8, y+56, "% 4.0f", (float)bme->prs / 10);
+
+    display.setFont( NULL);
+    sprintAt( x+53, y+14, "%i", decimal);
   }
   //drawHBar( 72, y+1, 50, 5, batLevel);
 }
@@ -714,14 +720,19 @@ void handleDownlink( SensorData *down) {
   LoraFill* fill = 0;
   LoraNode* node = 0;
   LoraBME280 *bme = 0;
+  LoraSensor* remoteStatus = 0;
+  LoraDS18B20* onewire = 0;
 
   Serial.printf( "Downlink  [%i]:\n", down->eod);
 
   while( index < down->eod) {
     switch( down->buffer[ index]) {
-      case SensorData::SensorType::EOL:
-        index += sizeof( LoraSensor);
-        Serial.println( "EOL");
+      case SensorData::SensorType::STATUS:
+          remoteStatus = (LoraSensor *) &down->buffer[index];
+          index += sizeof( LoraSensor);
+
+          localNode->meta = remoteStatus->meta;
+          Serial.printf( "status [%i]\n", localNode->meta);
       break;
 
       case SensorData::SensorType::ID:
@@ -734,10 +745,7 @@ void handleDownlink( SensorData *down) {
         index += sizeof( LoraNode);
         rmt = (node->meta & 0x1f);
 
-        newMeta = max( localNode->meta, (uint8_t) (node->meta & STS_MMASK));
-        localNode->meta = newMeta;
-
-        Serial.printf( "Node %i: %.2fV %.1fC [%02x]\n", rmt, (float) node->vbat /100, (float)node->cputemp /10, newMeta);
+        Serial.printf( "Node %i: %.2fV %.1fC\n", rmt, (float) node->vbat /100, (float)node->cputemp /10);
         //sprintAt( 0, rmt*50, "remote %i\n%.2fV %.1fC\n", rmt, (float) node->vbat /100, (float)node->cputemp /10);
 
         switch( rmt) {
@@ -755,8 +763,10 @@ void handleDownlink( SensorData *down) {
       break;
 
       case SensorData::SensorType::DS18B20:
+        onewire = (LoraDS18B20 *) &down->buffer[index];
         index += sizeof( LoraDS18B20);
-        Serial.println( "  ds18b20");
+        rmt = (onewire->meta & 0x1f);
+        Serial.printf( "1wire%i\n", rmt);
       break;
 
       case SensorData::SensorType::BME280:
@@ -883,6 +893,37 @@ void goToSleep() {
   uint32_t interval = 0;
   char* mState[] = { "DCARE", "RELAX", "ALERT", "EMERG"};
 
+  // -------------------
+
+  uint8_t meta = localNode->meta & STS_MMASK;
+  switch( meta) {
+    case STS_EMERG:
+      cache.data.loraDelay = EMERG_DELAY;
+      cache.data.loraDlyFb = EMERG_FB;
+    break;
+
+    case STS_ALERT:
+      cache.data.loraDelay = ALERT_DELAY;
+      cache.data.loraDlyFb = ALERT_FB;
+    break;
+
+    case STS_RELAX:
+      cache.data.loraDelay = RELAX_DELAY;
+      cache.data.loraDlyFb = RELAX_FB;
+    break;
+
+    case STS_DCARE:
+    default:
+      cache.data.loraDelay = MINIMUM_DELAY;
+      cache.data.loraDlyFb = 0;
+  }
+
+  if ( cache.data.loraDlyFb > 0) {
+    cache.data.loraDlyFb--;
+  } else {
+    cache.data.loraDelay = MINIMUM_DELAY;
+  }
+
   // allows recall of the session after deepsleep
   if ( node) {
     persist.saveSession(node);
@@ -891,41 +932,10 @@ void goToSleep() {
     interval = node->timeUntilUplink();
   }
 
-  // -------------------
-
-  uint8_t meta = localNode->meta & STS_MMASK;
-  switch( meta) {
-    case STS_EMERG:
-      loraDelay = EMERG_DELAY;
-      loraDlyFb = EMERG_FB;
-    break;
-
-    case STS_ALERT:
-      loraDelay = ALERT_DELAY;
-      loraDlyFb = ALERT_FB;
-    break;
-
-    case STS_RELAX:
-      loraDelay = RELAX_DELAY;
-      loraDlyFb = RELAX_FB;
-    break;
-
-    case STS_DCARE:
-    default:
-      loraDelay = MINIMUM_DELAY;
-      loraDlyFb = 0;
-  }
-
-  if ( loraDlyFb > 0) {
-    loraDlyFb--;
-  } else {
-    loraDelay = MINIMUM_DELAY;
-  }
-
   // And then pick it or our MINIMUM_DELAY, whichever is greater
-  uint32_t delayMs = max(interval, (uint32_t) loraDelay * 1000);
+  uint32_t delayMs = max(interval, (uint32_t) cache.data.loraDelay * 1000);
 
-  Serial.printf("DeepSleep for [%s] [%d]-[%dk @%d]\n", mState[ STS_MSHIFT(meta)], interval, loraDelay, loraDlyFb);
+  Serial.printf("DeepSleep for [%s] [%d]-[%dk @%d]\n", mState[ STS_MSHIFT(meta)], interval, cache.data.loraDelay, cache.data.loraDlyFb);
   Serial.println( "----");
 
   delayMs = blinkMode( meta, delayMs);
@@ -943,11 +953,11 @@ uint32_t blinkMode( uint8_t meta, uint32_t delayMs) {
 
     switch( loops % 8) {
       case 6:
-        if ( meta < STS_EMERG) break;
+        if ( meta <= STS_EMERG) break;
       case 4:
-        if ( meta < STS_ALERT) break;
+        if ( meta <= STS_ALERT) break;
       case 2:
-        if ( meta < STS_RELAX) break;
+        if ( meta <= STS_RELAX) break;
       case 0:
         //Serial.printf( "[%i]", loops);
         heltec_led( LED_LOW);
