@@ -94,7 +94,7 @@ LCMEN2R13EFC1 display;    // V1.0
 
 #define LORA_DUTY_CYCLE 0     // for legal limit: 0, forTTN: 1250
 
-// Pause between sends in seconds, so this is every 15 minutes. (Delay will be
+// Pause between sends in seconds, so this is every 5 minutes. (Delay will be
 // longer if regulatory or TTN Fair Use Policy requires it.)
 #define MINIMUM_DELAY 300
 
@@ -1090,7 +1090,7 @@ void dumpDownlinkStats(const int16_t state) {
   }
 
   uint32_t networkTime = 0;
-  uint8_t fracSecond = 0;
+  uint16_t fracSecond = 0;
   if(node->getMacDeviceTimeAns(&networkTime, &fracSecond, true) == RADIOLIB_ERR_NONE) {
     Serial.print(F("[LoRaWAN] DeviceTime Unix:\t"));
     Serial.println(networkTime);
