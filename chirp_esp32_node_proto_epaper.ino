@@ -145,9 +145,11 @@ struct tofNode {
   climHist hist;
 };
 
+#define NODE_IBC  0
+#define NODE_WELL 1
+
 struct dataMem {
-  tofNode well;
-  tofNode ibc;
+  tofNode remotes[4];
   uint16_t loraDelay;
   uint16_t loraDlyFb;
 };
@@ -178,35 +180,22 @@ void persistData( rtcMem *pData) {
 void initData( dataMem* data) {
   uint8_t i;
 
-  data->ibc.tof.dist = -1;
-  data->ibc.fill.percent = 0;
-  data->ibc.bme.temp = 250;
-  data->ibc.bme.hmd = 500;
-  data->ibc.bme.prs = 9500;
-/*
-  for ( i=0; i < HIST_DEPTH; i++) {
-    data->ibc.hist.bme[i].temp = 250;
-    data->ibc.hist.bme[i].hmd = 500;
-    data->ibc.hist.bme[i].prs = 9500;
+  for( i=0; i < 4; i++) {
+    data->remotes[ i].tof.dist = -1;
+    data->remotes[ i].fill.percent = 0;
+    data->remotes[ i].bme.temp = 250;
+    data->remotes[ i].bme.hmd = 500;
+    data->remotes[ i].bme.prs = 9500;
+    /*
+    for ( i=0; i < HIST_DEPTH; i++) {
+      data->remotes[ i].hist.bme[i].temp = 250;
+      data->remotes[ i].hist.bme[i].hmd = 500;
+      data->remotes[ i].hist.bme[i].prs = 9500;
+    }
+    */
+    data->remotes[ i].hist.current = -1;
+    data->remotes[ i].hist.last = 0;
   }
-*/
-  data->ibc.hist.current = -1;
-  data->ibc.hist.last = 0;
-
-  data->well.tof.dist = -1;
-  data->well.fill.percent = 0;
-  data->well.bme.temp = 250;
-  data->well.bme.hmd = 500;
-  data->well.bme.prs = 9500;
-/*
-  for ( i=0; i < HIST_DEPTH; i++) {
-    data->well.hist.bme[i].temp = 250;
-    data->well.hist.bme[i].hmd = 500;        //(uint16_t) random( 500, 1000);
-    data->well.hist.bme[i].prs = 9500; //(uint16_t) random( 9500, 11000);;
-  }
-*/
-  data->well.hist.current = -1;
-  data->well.hist.last = 0;
 
   data->loraDelay = MINIMUM_DELAY;
   data->loraDlyFb = 0;
@@ -693,16 +682,16 @@ void setup() {
   display.drawLine( 0, 79, 122, 79, DEFAULT_TEXT_COLOR);
   display.drawLine( 61, 80, 61, 252, DEFAULT_TEXT_COLOR);
 
-  drawNode( 0, 8, &cache.data.ibc.node, "IBC");
-  drawBME(  0, 80, &cache.data.ibc.bme, "IBC");
+  drawNode( 0, 8, &cache.data.remotes[ NODE_IBC].node, "IBC");
+  drawBME(  0, 80, &cache.data.remotes[ NODE_IBC].bme, "IBC");
 
-  drawNode( 0, 16,&cache.data.well.node, "Well");
-  drawBME( 62, 80,&cache.data.well.bme, "Well");
+  drawNode( 0, 16,&cache.data.remotes[ NODE_WELL].node, "Well");
+  drawBME( 62, 80,&cache.data.remotes[ NODE_WELL].bme, "Well");
 
-  drawHist( 0, 25, &cache.data.well.hist, "Well");
+  drawHist( 0, 25, &cache.data.remotes[ NODE_WELL].hist, "Well");
 
-  drawLevels( &cache.data.ibc.tof, &cache.data.well.tof);
-  drawFill( &cache.data.ibc.fill, &cache.data.well.fill);
+  drawLevels( &cache.data.remotes[ NODE_IBC].tof, &cache.data.remotes[ NODE_WELL].tof);
+  drawFill( &cache.data.remotes[ NODE_IBC].fill, &cache.data.remotes[ NODE_WELL].fill);
 
   heltec_led(LED_OFF);
 
@@ -743,23 +732,12 @@ void handleDownlink( SensorData *down) {
       case SensorData::SensorType::NODE:
         node = (LoraNode *) &down->buffer[index];
         index += sizeof( LoraNode);
-        rmt = (node->meta & 0x1f);
+        rmt = (node->meta & 0x03);
 
         Serial.printf( "Node %i: %.2fV %.1fC\n", rmt, (float) node->vbat /100, (float)node->cputemp /10);
         //sprintAt( 0, rmt*50, "remote %i\n%.2fV %.1fC\n", rmt, (float) node->vbat /100, (float)node->cputemp /10);
 
-        switch( rmt) {
-          case 0:
-            memcpy( &cache.data.ibc.node, node, sizeof( LoraNode));
-          break;
-
-          case 1:
-            memcpy( &cache.data.well.node, node, sizeof( LoraNode));
-          break;
-
-          default:
-            ;
-        }
+        memcpy( &cache.data.remotes[ rmt].node, node, sizeof( LoraNode));
       break;
 
       case SensorData::SensorType::DS18B20:
@@ -772,42 +750,20 @@ void handleDownlink( SensorData *down) {
       case SensorData::SensorType::BME280:
         bme = (LoraBME280 *) &down->buffer[index];
         index += sizeof( LoraBME280);
-        rmt = (bme->meta & 0x1f);
+        rmt = (bme->meta & 0x03);
 
-        switch( rmt) {
-          case 0:
-            memcpy( &cache.data.ibc.bme, bme, sizeof( LoraBME280));
+        memcpy( &cache.data.remotes[ rmt].bme, bme, sizeof( LoraBME280));
 
-            if ( cache.data.ibc.hist.current < 0) {
-              cache.data.ibc.hist.current = 0;
-            } else {
-              cache.data.ibc.hist.current = (cache.data.ibc.hist.current+1) % HIST_DEPTH;
-              if ( cache.data.ibc.hist.current == cache.data.ibc.hist.last)
-                cache.data.ibc.hist.last = (cache.data.ibc.hist.last+1) % HIST_DEPTH;
-            }
-
-            memcpy( &cache.data.ibc.hist.bme[ cache.data.ibc.hist.current], bme, sizeof( LoraBME280));
-            //cache.data.ibc.tof.dist = 550;
-          break;
-
-          case 1:
-            memcpy( &cache.data.well.bme, bme, sizeof( LoraBME280));
-
-            if ( cache.data.well.hist.current < 0) {
-              cache.data.well.hist.current = 0;
-            } else {
-              cache.data.well.hist.current = (cache.data.well.hist.current+1) % HIST_DEPTH;
-              if ( cache.data.well.hist.current == cache.data.well.hist.last)
-                cache.data.well.hist.last = (cache.data.well.hist.last+1) % HIST_DEPTH;
-            }
-
-            memcpy( &cache.data.well.hist.bme[ cache.data.well.hist.current], bme, sizeof( LoraBME280));
-            //cache.data.well.tof.dist = 2123;
-          break;
-
-          default:
-            ;
+        if ( cache.data.remotes[ rmt].hist.current < 0) {
+          cache.data.remotes[ rmt].hist.current = 0;
+        } else {
+          cache.data.remotes[ rmt].hist.current = (cache.data.remotes[ rmt].hist.current+1) % HIST_DEPTH;
+          if ( cache.data.remotes[ rmt].hist.current == cache.data.remotes[ rmt].hist.last)
+            cache.data.remotes[ rmt].hist.last = (cache.data.remotes[ rmt].hist.last+1) % HIST_DEPTH;
         }
+
+        memcpy( &cache.data.remotes[ rmt].hist.bme[ cache.data.remotes[ rmt].hist.current], bme, sizeof( LoraBME280));
+        //cache.data.remotes[ rmt].tof.dist = 550;
 
         Serial.printf( "BME  %i: %i C\n", rmt, bme->temp);
         Serial.printf( "      : %i h\n", bme->hmd);
@@ -818,26 +774,14 @@ void handleDownlink( SensorData *down) {
       case SensorData::SensorType::TOF:
         tof = (LoraToF *) &down->buffer[index];
         index += sizeof( LoraToF);
-        rmt = (tof->meta & 0x1f);
+        rmt = (tof->meta & 0x03);
 
-        switch( rmt) {
-          case 0:
-            memcpy( &cache.data.ibc.tof, tof, sizeof( LoraToF));
-            //cache.data.ibc.tof.dist = 550;
-          break;
-
-          case 1:
-            memcpy( &cache.data.well.tof, tof, sizeof( LoraToF));
-            //cache.data.well.tof.dist = 2123;
-          break;
-
-          default:
-            ;
-        }
+        memcpy( &cache.data.remotes[ rmt].tof, tof, sizeof( LoraToF));
+        //cache.data.remotes[ rmt].tof.dist = 550;
 
         Serial.printf( "ToF  %i: %imm\n", rmt, tof->dist);
-        //Serial.printf( "     %i: %imm\n", 0, cache.data.ibc.tof.dist);
-        //Serial.printf( "     %i: %imm\n", 1, cache.data.well.tof.dist);
+        //Serial.printf( "     %i: %imm\n", 0, cache.data.remotes[ NODE_IBC].tof.dist);
+        //Serial.printf( "     %i: %imm\n", 1, cache.data.remotes[ NODE_WELL].tof.dist);
         //Serial.println( "TOF parsed");
         //Serial.println( tof->dist);
         i++;
@@ -851,24 +795,13 @@ void handleDownlink( SensorData *down) {
       case SensorData::SensorType::FILL:
         fill = (LoraFill *) &down->buffer[index];
         index += sizeof( LoraFill);
-        rmt = (fill->meta & 0x1f);
+        rmt = (fill->meta & 0x03);
 
-        switch( rmt) {
-          case 0:
-            memcpy( &cache.data.ibc.fill, fill, sizeof( LoraFill));
-          break;
-
-          case 1:
-            memcpy( &cache.data.well.fill, fill, sizeof( LoraFill));
-          break;
-
-          default:
-            ;
-        }
+        memcpy( &cache.data.remotes[ rmt].fill, fill, sizeof( LoraFill));
 
         Serial.printf( "Fill %i: %i%%\n", rmt, fill->percent/100);
-        //Serial.printf( "     %i: %i%%\n", 0, cache.data.ibc.fill.percent);
-        //Serial.printf( "     %i: %i%%\n", 1, cache.data.well.fill.percent);
+        //Serial.printf( "     %i: %i%%\n", 0, cache.data.remotes[ NODE_IBC].fill.percent);
+        //Serial.printf( "     %i: %i%%\n", 1, cache.data.remotes[ NODE_WELL].fill.percent);
         //Serial.println( "TOF parsed");
         //Serial.println( tof->dist);
         i++;
