@@ -145,11 +145,14 @@ struct tofNode {
   climHist hist;
 };
 
+#define REMOTE_NODES  4
+#define REMOTE_NODE_MASK  0x03
+
 #define NODE_IBC  0
 #define NODE_WELL 1
 
 struct dataMem {
-  tofNode remotes[4];
+  tofNode remotes[ REMOTE_NODES];
   uint16_t loraDelay;
   uint16_t loraDlyFb;
 };
@@ -180,7 +183,7 @@ void persistData( rtcMem *pData) {
 void initData( dataMem* data) {
   uint8_t i;
 
-  for( i=0; i < 4; i++) {
+  for( i=0; i < REMOTE_NODES; i++) {
     data->remotes[ i].tof.dist = -1;
     data->remotes[ i].fill.percent = 0;
     data->remotes[ i].bme.temp = 250;
@@ -732,7 +735,7 @@ void handleDownlink( SensorData *down) {
       case SensorData::SensorType::NODE:
         node = (LoraNode *) &down->buffer[index];
         index += sizeof( LoraNode);
-        rmt = (node->meta & 0x03);
+        rmt = (node->meta & REMOTE_NODE_MASK);
 
         Serial.printf( "Node %i: %.2fV %.1fC\n", rmt, (float) node->vbat /100, (float)node->cputemp /10);
         //sprintAt( 0, rmt*50, "remote %i\n%.2fV %.1fC\n", rmt, (float) node->vbat /100, (float)node->cputemp /10);
@@ -750,7 +753,7 @@ void handleDownlink( SensorData *down) {
       case SensorData::SensorType::BME280:
         bme = (LoraBME280 *) &down->buffer[index];
         index += sizeof( LoraBME280);
-        rmt = (bme->meta & 0x03);
+        rmt = (bme->meta & REMOTE_NODE_MASK);
 
         memcpy( &cache.data.remotes[ rmt].bme, bme, sizeof( LoraBME280));
 
@@ -774,7 +777,7 @@ void handleDownlink( SensorData *down) {
       case SensorData::SensorType::TOF:
         tof = (LoraToF *) &down->buffer[index];
         index += sizeof( LoraToF);
-        rmt = (tof->meta & 0x03);
+        rmt = (tof->meta & REMOTE_NODE_MASK);
 
         memcpy( &cache.data.remotes[ rmt].tof, tof, sizeof( LoraToF));
         //cache.data.remotes[ rmt].tof.dist = 550;
@@ -795,7 +798,7 @@ void handleDownlink( SensorData *down) {
       case SensorData::SensorType::FILL:
         fill = (LoraFill *) &down->buffer[index];
         index += sizeof( LoraFill);
-        rmt = (fill->meta & 0x03);
+        rmt = (fill->meta & REMOTE_NODE_MASK);
 
         memcpy( &cache.data.remotes[ rmt].fill, fill, sizeof( LoraFill));
 
