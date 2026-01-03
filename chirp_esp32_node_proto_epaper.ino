@@ -148,8 +148,12 @@ struct tofNode {
 #define REMOTE_NODES  4
 #define REMOTE_NODE_MASK  0x03
 
-#define NODE_IBC  0
-#define NODE_WELL 1
+#define NODE_WELL 0
+#define NODE_IBC  1
+#define NODE_FNTE 2
+#define NODE_RUIN 3
+
+const char* node_names[ REMOTE_NODES] = { "well", "ibc", "fnte", "ruin"};
 
 struct dataMem {
   tofNode remotes[ REMOTE_NODES];
@@ -208,7 +212,7 @@ void initData( dataMem* data) {
 
 //---- display code ----
 
-void sprintAt( int16_t x, int16_t y, char *fmt, ...) {
+void sprintAt( int16_t x, int16_t y, const char *fmt, ...) {
   char gstring[48];
   va_list args;
 
@@ -226,7 +230,7 @@ void drawVBar( uint8_t x,  uint8_t y, uint8_t w, uint8_t h, int8_t headroom) {
     display.fillRect( x, y+headroom, w, h-headroom, DEFAULT_TEXT_COLOR);
   } else {
     display.drawRect( x, y, w, h, DEFAULT_TEXT_COLOR);
-    display.drawLine( x, y, x+w, y+h, DEFAULT_TEXT_COLOR);
+    display.drawLine( x, y, x+w-1, y+h-1, DEFAULT_TEXT_COLOR);
   }
 }
 
@@ -235,72 +239,68 @@ void drawHBar( uint8_t x,  uint8_t y, uint8_t w, uint8_t h, int8_t fill) {
   display.drawRect( x+fill, y, w-fill, h, DEFAULT_TEXT_COLOR);
 }
 
-void drawFill( LoraFill *ibc, LoraFill *well) {
-  uint8_t y = 150;
-  display.setFont( NULL);
-  
+void drawContainer( uint8_t x, uint8_t y, uint8_t w, uint8_t h, LoraFill *ibc) {
   int8_t headroom = -1;
   if ( ibc) {
     if ( ibc->percent > 0) {
-      headroom = 100 - min( 100, ibc->percent / 100);
+      headroom = h - min( (int8_t) h, int8_t ((h * ibc->percent) / 10000));
     }
   }
-  drawVBar( 11, y, 40, 100, headroom);
-  //sprintAt( 10, y-8, "IBC");
-
-  headroom = -1;
-  if ( well) {
-    if ( well->percent > 0) {
-      headroom = 100 - min( 100, well->percent / 100);
-    }
-  }
-  drawVBar( 66, y, 54, 100, headroom);
-  //sprintAt( 70, y-8, "Well");
+  drawVBar( x, y, w, h, headroom);
 }
 
-void drawLevels( LoraToF *ibc, LoraToF *well) {
+void drawFill() {
+  uint8_t i = 0;
+  uint8_t x = 0;
   uint8_t y = 150;
+
+  drawContainer( x, y, 42, 100, &cache.data.remotes[ i].fill);
+  x += 45;
+  i++;
+
+  for( /* i=1 */; i < REMOTE_NODES; i++) {
+    drawContainer( x, y, 24, 80, &cache.data.remotes[ i].fill);
+    x += 26;
+  }
+}
+
+void drawLevels() {
+  uint8_t i = 0;
+  uint8_t x = 0;
+  uint8_t y = 142;
   display.setFont( NULL);
-/*  
-  uint8_t headroom = 100;
-  if ( ibc) {
-    if ( ibc->dist > 0) {
-      headroom = min( 100, ibc->dist / 12);
-    }
+
+  sprintAt( x, y, "% 4i", cache.data.remotes[ i].tof.dist);
+  x += 45;
+  i++;
+
+  for( /* i = 0 */; i < REMOTE_NODES; i++) {
+    sprintAt( x, y, "% 4i", cache.data.remotes[ i].tof.dist);
+    x += 26;
   }
-  drawVBar( 8, y, 40, 100, headroom);
-*/
-  sprintAt( 14, y-8, "% 4i", ibc->dist);
-/*
-  headroom = 100;
-  if ( well) {
-    if ( well->dist > 0) {
-      headroom = min( 100, well->dist / 44);
-    }
-  }
-  drawVBar( 62, y, 55, 100, headroom);
-*/
-  sprintAt( 78, y-8, "% 4i", well->dist);
 }
 
 void drawBME( uint8_t x, uint8_t y, LoraBME280 *bme, char* name) {
-  //display.drawRect( x, y, 60, 60, DEFAULT_TEXT_COLOR);
   uint8_t decimal = bme->temp % 10;
 
   display.setFont( NULL); //DEFAULT_BOLD);
-  sprintAt( x+3, y+3, name);
+  sprintAt( x+2, y+3, name);
 
   //display.setFont( NULL);
   if ( bme) {
     display.setFont( DEFAULT_FONT);
-    sprintAt( x+8, y+24, "% 4.0f", (float)bme->temp / 10);
-    sprintAt( x+8, y+40, "%%%3.0f", (float)bme->hmd / 10);
-    sprintAt( x+8, y+56, "% 4.0f", (float)bme->prs / 10);
+    sprintAt( x+8, y+12, "% 4.0f", (float)bme->hmd / 10);
+    sprintAt( x+8, y+27, "% 4.0f", (float)bme->temp / 10);
+    sprintAt( x+8, y+42, "% 4.0f", (float)bme->prs / 10);
 
     display.setFont( NULL);
-    sprintAt( x+53, y+14, "%i", decimal);
+    sprintAt( x+53, y+2, "%%");
+    sprintAt( x+53, y+17, "%i", decimal);
+    sprintAt( x+53, y+30, "m");
+    sprintAt( x+53, y+36, "m");
   }
   //drawHBar( 72, y+1, 50, 5, batLevel);
+  //display.drawRect( x, y, 60, 46, DEFAULT_TEXT_COLOR);
 }
 
 void drawHist( uint8_t x, uint8_t y, climHist *hist, char* name) {
@@ -351,7 +351,7 @@ void drawHist( uint8_t x, uint8_t y, climHist *hist, char* name) {
   }
 }
 
-void drawNode( uint8_t x, uint8_t y, LoraNode *node, char* name) {
+void drawNode( uint8_t x, uint8_t y, LoraNode *node, const char* name) {
   uint8_t batLevel = 0;
   char status = '.';
 
@@ -359,9 +359,9 @@ void drawNode( uint8_t x, uint8_t y, LoraNode *node, char* name) {
   if ( node) {
     if ( node->vbat > 0) {
       batLevel = min( 50, (node->vbat -325) /2);
-      sprintAt( 40, y, "%.2fV", (float)node->vbat / 100);
+      sprintAt( 40, y, "%.2fv", (float)node->vbat / 100);
     } else {
-        sprintAt( 40, y, "-.--V" );
+        sprintAt( 40, y, "-.--v" );
     }
     switch( node->meta & STS_MMASK) {
       case STS_EMERG: status = '*'; break;
@@ -374,6 +374,17 @@ void drawNode( uint8_t x, uint8_t y, LoraNode *node, char* name) {
   sprintAt( 0, y, name);
 }
 
+void drawFcntBar( uint8_t y, uint8_t h, uint32_t fCntUp) {
+  uint32_t mask = 0x01;
+  uint32_t bitX = 0;
+  for( uint8_t i = 0; i < 32; i++) {
+    if (fCntUp & mask) display.fillRect( bitX, y, 4, h, DEFAULT_TEXT_COLOR);
+    bitX += 4;
+    mask <<= 1;
+  }
+  if (fCntUp & 0x40000000) display.fillRect( 120, y, 1, h, DEFAULT_TEXT_COLOR);
+  if (fCntUp & 0x80000000) display.fillRect( 121, h, 1, h, DEFAULT_TEXT_COLOR);
+}
 //-------------------------------------------------------
 
 void heltec_ve(bool state) {
@@ -569,7 +580,7 @@ void setup() {
 
   Serial.printf( "esp temp/vbat[ %i %i ]\n", localNode->cputemp, localNode->vbat);
 
-  drawNode( 0, 0, localNode, "View");
+  drawNode( 0, 0, localNode, "DISP");
 
   //---- run ----
 
@@ -585,116 +596,113 @@ void setup() {
 
   radio.reset();
   int16_t state = radio.begin();
+  uint32_t fCntUp = 0;
 
-  if (state != RADIOLIB_ERR_NONE) {
-    Serial.printf("error [%x] - postpone.\n", state);
-    Serial.println(stateDecode( state));
-    goToSleep();
-  }
+  if (state == RADIOLIB_ERR_NONE) {
 
-  node = persist.manage(&radio);
+    node = persist.manage(&radio);
 
-  if (!node->isActivated()) {
-    Serial.println("RESTORE FAILED!");
-    goToSleep();
-  }
+    if ( node->isActivated()) {
 
-  Serial.println( "session restored!");
-  
-  Serial.print("[LoRaWAN] DevAddr: ");
-  Serial.println((unsigned long)node->getDevAddr(), HEX);
+      Serial.println( "session restored!");
+      
+      Serial.print("[LoRaWAN] DevAddr: ");
+      Serial.println((unsigned long)node->getDevAddr(), HEX);
 
-  Serial.printf( "rssi %.1f snr %.1f frq %.1f\n", radio.getRSSI(), radio.getSNR(), radio.getFrequencyError());
-  //heltec_led(LED_MID);
+      Serial.printf( "rssi %.1f snr %.1f frq %.1f\n", radio.getRSSI(), radio.getSNR(), radio.getFrequencyError());
+      //heltec_led(LED_MID);
 
-  // If we're still here, it means we joined, and we can send something
+      // If we're still here, it means we joined, and we can send something
 
-  // Enable the ADR algorithm (on by default which is preferable)
-  node->setADR(true);
-  // Set a datarate to start off with
-  node->setDatarate(5);
-  // Manages uplink intervals to the TTN Fair Use Policy
-  node->setDutyCycle(true, LORA_DUTY_CYCLE);   // zero sets max val by law, TTN 30s/24h: [1250]ms/1h);
-  // Update dwell time limits - 400ms is the limit for the US
-  node->setDwellTime(true, 400);  // zero sets max val by law, 400);
+      // Enable the ADR algorithm (on by default which is preferable)
+      node->setADR(true);
+      // Set a datarate to start off with
+      node->setDatarate(5);
+      // Manages uplink intervals to the TTN Fair Use Policy
+      node->setDutyCycle(true, LORA_DUTY_CYCLE);   // zero sets max val by law, TTN 30s/24h: [1250]ms/1h);
+      // Update dwell time limits - 400ms is the limit for the US
+      node->setDwellTime(true, 400);  // zero sets max val by law, 400);
 
-  node->setDeviceStatus(battLevel);
+      node->setDeviceStatus(battLevel);
 
-  //-----------------------------------------------------------------
-  
-  heltec_led(LED_OFF);
-  Serial.print( "Sending ... ");
+      //-----------------------------------------------------------------
+      
+      heltec_led(LED_OFF);
+      Serial.print( "Sending ... ");
 
-  // Retrieve the last uplink frame counter
-  uint32_t fCntUp = node->getFCntUp();
-  Serial.println( "FCNTUP "+String( fCntUp));
+      // Retrieve the last uplink frame counter
+      fCntUp = node->getFCntUp();
+      Serial.println( "FCNTUP "+String( fCntUp));
 
-  uint32_t mask = 0x01;
-  uint32_t bitX = 0;
-  for( uint8_t i = 0; i < 32; i++) {
-    if (fCntUp & mask) display.fillRect( bitX, 77, 4, 3, DEFAULT_TEXT_COLOR);
-    bitX += 4;
-    mask <<= 1;
-  }
-  if (fCntUp & 0x40000000) display.fillRect( 120, 77, 1, 3, DEFAULT_TEXT_COLOR);
-  if (fCntUp & 0x80000000) display.fillRect( 121, 77, 1, 3, DEFAULT_TEXT_COLOR);
+      size_t downlinkSize = DOWN_SIZE;
+      if(fCntUp == 1) {
+        Serial.println(F("and requesting LinkCheck and DeviceTime"));
+        node->sendMacCommandReq(RADIOLIB_LORAWAN_MAC_LINK_CHECK);
+        node->sendMacCommandReq(RADIOLIB_LORAWAN_MAC_DEVICE_TIME);
 
-  size_t downlinkSize = DOWN_SIZE;
-  if(fCntUp == 1) {
-    Serial.println(F("and requesting LinkCheck and DeviceTime"));
-    node->sendMacCommandReq(RADIOLIB_LORAWAN_MAC_LINK_CHECK);
-    node->sendMacCommandReq(RADIOLIB_LORAWAN_MAC_DEVICE_TIME);
+        state = node->sendReceive( up.buffer, up.eod, fPort, down.buffer, &downlinkSize, true, &uplinkDetails, &downlinkDetails);
+      } else {
+        state = node->sendReceive( up.buffer, up.eod, fPort, down.buffer, &downlinkSize, false, &uplinkDetails, &downlinkDetails);
+      }
+      down.eod = (uint8_t) downlinkSize;
 
-    state = node->sendReceive( up.buffer, up.eod, fPort, down.buffer, &downlinkSize, true, &uplinkDetails, &downlinkDetails);
-  } else {
-    state = node->sendReceive( up.buffer, up.eod, fPort, down.buffer, &downlinkSize, false, &uplinkDetails, &downlinkDetails);
-  }
-  down.eod = (uint8_t) downlinkSize;
+      if(state == RADIOLIB_ERR_NONE) {
+        Serial.println("OK.");
+        //heltec_led(LED_BRIGHT);
+      } else if (state > 0) {
+      // Check if a downlink was received 
+      // (state 0 = no downlink, state 1/2 = downlink in window Rx1/Rx2)
+        Serial.printf("OK. Downlink data! [%i] #%i\n", state, down.eod);
 
-  if(state == RADIOLIB_ERR_NONE) {
-    Serial.println("OK.");
-    //heltec_led(LED_BRIGHT);
-  } else if (state > 0) {
-  // Check if a downlink was received 
-  // (state 0 = no downlink, state 1/2 = downlink in window Rx1/Rx2)
-    Serial.printf("OK. Downlink data! [%i] #%i\n", state, down.eod);
+        // Did we get a downlink with data for us
+        if ( down.eod > 0) {
+          Serial.println(F("Downlink data: "));
+          arrayDump( down.buffer, down.eod);
 
-    // Did we get a downlink with data for us
-    if ( down.eod > 0) {
-      Serial.println(F("Downlink data: "));
-      arrayDump( down.buffer, down.eod);
+          handleDownlink( &down);
 
-      handleDownlink( &down);
+          persistData( &cache);
+        } else {
+          Serial.println(F("<MAC commands only>"));
+        }
 
-      persistData( &cache);
+        //dumpDownlinkStats( state);
+
+        //heltec_led(LED_BRIGHT);
+      } else {
+        Serial.printf("Error %d\n", state);
+        //heltec_led(LED_LOW);
+      }
     } else {
-      Serial.println(F("<MAC commands only>"));
+      Serial.println("RESTORE FAILED!");
     }
-
-    //dumpDownlinkStats( state);
-
-    //heltec_led(LED_BRIGHT);
   } else {
-    Serial.printf("Error %d\n", state);
-    //heltec_led(LED_LOW);
+      Serial.printf("error [%x] - postpone.\n", state);
+      Serial.println(stateDecode( state));
   }
-  
+
   //-------
   heltec_led(LED_LOW);
 
-  display.drawLine( 0, 79, 122, 79, DEFAULT_TEXT_COLOR);
-  display.drawLine( 61, 80, 61, 252, DEFAULT_TEXT_COLOR);
+  //display.drawLine( 0, 94, 122, 94, DEFAULT_TEXT_COLOR);
+  display.drawLine( 61, 94, 61, 140, DEFAULT_TEXT_COLOR);
+  display.drawLine( 0, 140, 122, 140, DEFAULT_TEXT_COLOR);
 
-  drawNode( 0, 8, &cache.data.remotes[ NODE_IBC].node, "IBC");
-  drawBME(  0, 80, &cache.data.remotes[ NODE_IBC].bme, "IBC");
+  uint8_t y = 8;
+  for( uint8_t i = 0; i < REMOTE_NODES; i++) {
+    drawNode( 0, y, &cache.data.remotes[ i].node, node_names[ i]);
+    y += 8;
+  }
+  
+  drawHist( 0, 40, &cache.data.remotes[ NODE_WELL].hist, "Well");
 
-  drawNode( 0, 16,&cache.data.remotes[ NODE_WELL].node, "Well");
-  drawBME( 62, 80,&cache.data.remotes[ NODE_WELL].bme, "Well");
+  drawFcntBar( 92, 3, fCntUp);
 
-  drawHist( 0, 25, &cache.data.remotes[ NODE_WELL].hist, "Well");
+  drawBME( 0, 95, &cache.data.remotes[ NODE_WELL].bme, "Well");
+  drawBME( 62, 95, &cache.data.remotes[ NODE_IBC].bme, "IBC");
 
-  drawLevels( &cache.data.remotes[ NODE_IBC].tof, &cache.data.remotes[ NODE_WELL].tof);
-  drawFill( &cache.data.remotes[ NODE_IBC].fill, &cache.data.remotes[ NODE_WELL].fill);
+  drawLevels();
+  drawFill();
 
   heltec_led(LED_OFF);
 
