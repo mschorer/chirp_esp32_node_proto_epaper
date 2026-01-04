@@ -194,10 +194,10 @@ void initData( dataMem* data) {
     data->remotes[ i].bme.hmd = 500;
     data->remotes[ i].bme.prs = 9500;
     /*
-    for ( i=0; i < HIST_DEPTH; i++) {
-      data->remotes[ i].hist.bme[i].temp = 250;
-      data->remotes[ i].hist.bme[i].hmd = 500;
-      data->remotes[ i].hist.bme[i].prs = 9500;
+    for ( uint8_t j=0; i < HIST_DEPTH; j++) {
+      data->remotes[ i].hist.bme[j].temp = 250;
+      data->remotes[ i].hist.bme[j].hmd = 500;
+      data->remotes[ i].hist.bme[j].prs = 9500;
     }
     */
     data->remotes[ i].hist.current = -1;
@@ -239,76 +239,76 @@ void drawHBar( uint8_t x,  uint8_t y, uint8_t w, uint8_t h, int8_t fill) {
   display.drawRect( x+fill, y, w-fill, h, DEFAULT_TEXT_COLOR);
 }
 
-void drawContainer( uint8_t x, uint8_t y, uint8_t w, uint8_t h, LoraFill *ibc) {
+void drawContainer( uint8_t x, uint8_t y, uint8_t w, uint8_t h, uint8_t nodedIdx) {
   int8_t headroom = -1;
-  if ( ibc) {
-    if ( ibc->percent > 0) {
-      headroom = h - min( (int8_t) h, int8_t ((h * ibc->percent) / 10000));
-    }
+
+  if ( cache.data.remotes[ nodedIdx].fill.percent > 0) {
+    headroom = h - min( (int8_t) h, int8_t ((h * cache.data.remotes[ nodedIdx].fill.percent) / 10000));
   }
   drawVBar( x, y, w, h, headroom);
+
+  sprintAt( x, y+2, "% 4i", cache.data.remotes[ nodedIdx].tof.dist);
+  display.setTextColor( WHITE);
+  sprintAt( x, y+h-10, "% 4i", cache.data.remotes[ nodedIdx].tof.dist);
+  display.setTextColor( DEFAULT_TEXT_COLOR);
 }
 
-void drawFill() {
-  uint8_t i = 0;
-  uint8_t x = 0;
-  uint8_t y = 150;
+void drawFill( uint8_t y) {
+  uint8_t i = 0, x = 0;
 
-  drawContainer( x, y, 42, 100, &cache.data.remotes[ i].fill);
-  x += 45;
-  i++;
+  drawContainer( x, y, 40, 100, i++);
+  x += 42;
+  drawContainer( x, y, 38, 46, i++);
+  y += 54;
+  drawContainer( x, y, 38, 46, i++);
+  x += 40;
+  drawContainer( x, y, 38, 46, i++);
 
-  for( /* i=1 */; i < REMOTE_NODES; i++) {
+  /*
+  for( i=1; i < REMOTE_NODES; i++) {
     drawContainer( x, y, 24, 80, &cache.data.remotes[ i].fill);
     x += 26;
   }
+  */
 }
 
-void drawLevels() {
-  uint8_t i = 0;
-  uint8_t x = 0;
-  uint8_t y = 142;
-  display.setFont( NULL);
-
-  sprintAt( x, y, "% 4i", cache.data.remotes[ i].tof.dist);
-  x += 45;
-  i++;
-
-  for( /* i = 0 */; i < REMOTE_NODES; i++) {
-    sprintAt( x, y, "% 4i", cache.data.remotes[ i].tof.dist);
-    x += 26;
-  }
-}
-
-void drawBME( uint8_t x, uint8_t y, LoraBME280 *bme, char* name) {
+void drawBME( uint8_t x, uint8_t y, uint8_t nodedIdx) {
+  LoraBME280 *bme = &cache.data.remotes[ NODE_WELL].bme;
+  const char* name = node_names[ nodedIdx];
   uint8_t decimal = bme->temp % 10;
+
+  //display.drawRect( x, y, 60, 46, DEFAULT_TEXT_COLOR);
+  //display.fillRect( x, y, 60, 46, DEFAULT_TEXT_COLOR);
+  //display.setTextColor( WHITE);
 
   display.setFont( NULL); //DEFAULT_BOLD);
   sprintAt( x+2, y+3, name);
 
   //display.setFont( NULL);
   if ( bme) {
-    display.setFont( DEFAULT_FONT);
-    sprintAt( x+8, y+12, "% 4.0f", (float)bme->hmd / 10);
-    sprintAt( x+8, y+27, "% 4.0f", (float)bme->temp / 10);
+    display.setFont( DEFAULT_BOLD);
+    sprintAt( x+8, y+12, "% 4.0f", (float)bme->temp / 10);
+    sprintAt( x+8, y+27, "% 4.0f", (float)bme->hmd / 10);
     sprintAt( x+8, y+42, "% 4.0f", (float)bme->prs / 10);
 
     display.setFont( NULL);
-    sprintAt( x+53, y+2, "%%");
-    sprintAt( x+53, y+17, "%i", decimal);
+    sprintAt( x+53, y+2, "%i", decimal);
+    sprintAt( x+53, y+17, "%%");
     sprintAt( x+53, y+30, "m");
     sprintAt( x+53, y+36, "m");
   }
   //drawHBar( 72, y+1, 50, 5, batLevel);
-  //display.drawRect( x, y, 60, 46, DEFAULT_TEXT_COLOR);
+  //display.setTextColor( BLACK);
 }
 
-void drawHist( uint8_t x, uint8_t y, climHist *hist, char* name) {
+void drawHist( uint8_t x, uint8_t y, uint8_t nodedIdx) {
   int8_t i, idx, start;
   uint16_t minP=12000, maxP=100, mid;
   float scale,yp;
+  climHist *hist = &cache.data.remotes[ nodedIdx].hist;
+  const char* name = node_names[ nodedIdx];
 
-  display.drawRect( x, y, 122, 52, DEFAULT_TEXT_COLOR);
+  //display.drawRect( x, y, 122, 52, DEFAULT_TEXT_COLOR);
 
   display.setFont( NULL); //DEFAULT_FONT);
   sprintAt( x+2, y+2, name);
@@ -580,8 +580,6 @@ void setup() {
 
   Serial.printf( "esp temp/vbat[ %i %i ]\n", localNode->cputemp, localNode->vbat);
 
-  drawNode( 0, 0, localNode, "DISP");
-
   //---- run ----
 
   //display.display();
@@ -684,25 +682,28 @@ void setup() {
   //-------
   heltec_led(LED_LOW);
 
-  //display.drawLine( 0, 94, 122, 94, DEFAULT_TEXT_COLOR);
-  display.drawLine( 61, 94, 61, 140, DEFAULT_TEXT_COLOR);
-  display.drawLine( 0, 140, 122, 140, DEFAULT_TEXT_COLOR);
+  display.drawLine( 0, 99, 122, 99, DEFAULT_TEXT_COLOR);
+  display.drawLine( 62, 99, 62, 144, DEFAULT_TEXT_COLOR);
+  display.drawLine( 0, 145, 122, 145, DEFAULT_TEXT_COLOR);
 
-  uint8_t y = 8;
+  display.drawLine( 0, 45, 122, 45, DEFAULT_TEXT_COLOR);
+  display.drawLine( 0, 96, 122, 96, DEFAULT_TEXT_COLOR);
+
+  drawNode( 0, 0, localNode, "DISP");
+  uint8_t y = 9;
   for( uint8_t i = 0; i < REMOTE_NODES; i++) {
     drawNode( 0, y, &cache.data.remotes[ i].node, node_names[ i]);
-    y += 8;
+    y += 9;
   }
   
-  drawHist( 0, 40, &cache.data.remotes[ NODE_WELL].hist, "Well");
+  drawHist( 0, 45, NODE_WELL);
 
-  drawFcntBar( 92, 3, fCntUp);
+  drawFcntBar( 97, 3, fCntUp);
 
-  drawBME( 0, 95, &cache.data.remotes[ NODE_WELL].bme, "Well");
-  drawBME( 62, 95, &cache.data.remotes[ NODE_IBC].bme, "IBC");
+  drawBME( 0, 100, NODE_WELL);
+  drawBME( 62, 100, NODE_IBC);
 
-  drawLevels();
-  drawFill();
+  drawFill( 150);
 
   heltec_led(LED_OFF);
 
