@@ -149,11 +149,11 @@ struct tofNode {
 #define REMOTE_NODE_MASK  0x03
 
 #define NODE_WELL 0
-#define NODE_IBC  1
+#define NODE_CAMP 1
 #define NODE_FNTE 2
 #define NODE_RUIN 3
 
-const char* node_names[ REMOTE_NODES] = { "well", "ibc", "fnte", "ruin"};
+const char* node_names[ REMOTE_NODES] = { "well", "camp", "fnte", "ruin"};
 
 struct dataMem {
   tofNode remotes[ REMOTE_NODES];
@@ -273,7 +273,7 @@ void drawFill( uint8_t y) {
 }
 
 void drawBME( uint8_t x, uint8_t y, uint8_t nodedIdx) {
-  LoraBME280 *bme = &cache.data.remotes[ NODE_WELL].bme;
+  LoraBME280 *bme = &cache.data.remotes[ nodedIdx].bme;
   const char* name = node_names[ nodedIdx];
   uint8_t decimal = bme->temp % 10;
 
@@ -701,7 +701,7 @@ void setup() {
   drawFcntBar( 97, 3, fCntUp);
 
   drawBME( 0, 100, NODE_WELL);
-  drawBME( 62, 100, NODE_IBC);
+  drawBME( 62, 100, NODE_CAMP);
 
   drawFill( 150);
 
@@ -792,7 +792,7 @@ void handleDownlink( SensorData *down) {
         //cache.data.remotes[ rmt].tof.dist = 550;
 
         Serial.printf( "ToF  %i: %imm\n", rmt, tof->dist);
-        //Serial.printf( "     %i: %imm\n", 0, cache.data.remotes[ NODE_IBC].tof.dist);
+        //Serial.printf( "     %i: %imm\n", 0, cache.data.remotes[ NODE_CAMP].tof.dist);
         //Serial.printf( "     %i: %imm\n", 1, cache.data.remotes[ NODE_WELL].tof.dist);
         //Serial.println( "TOF parsed");
         //Serial.println( tof->dist);
@@ -812,7 +812,7 @@ void handleDownlink( SensorData *down) {
         memcpy( &cache.data.remotes[ rmt].fill, fill, sizeof( LoraFill));
 
         Serial.printf( "Fill %i: %i%%\n", rmt, fill->percent/100);
-        //Serial.printf( "     %i: %i%%\n", 0, cache.data.remotes[ NODE_IBC].fill.percent);
+        //Serial.printf( "     %i: %i%%\n", 0, cache.data.remotes[ NODE_CAMP].fill.percent);
         //Serial.printf( "     %i: %i%%\n", 1, cache.data.remotes[ NODE_WELL].fill.percent);
         //Serial.println( "TOF parsed");
         //Serial.println( tof->dist);
