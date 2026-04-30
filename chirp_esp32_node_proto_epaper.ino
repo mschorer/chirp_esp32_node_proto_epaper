@@ -110,11 +110,13 @@ LoRaWANEvent_t downlinkDetails;
 //#include "Fonts/FreeMonoBold12pt7b.h"
 #include "Fonts/FreeMono9pt7b.h"
 #include "Fonts/FreeMonoBold9pt7b.h"
+//#include "Fonts/FreeSansBold9pt7b.h"
 
 // These are just for the sketch's reference - the library does not require them
 const Color DEFAULT_TEXT_COLOR = BLACK;
 const GFXfont *DEFAULT_FONT = &FreeMono9pt7b;
 const GFXfont *DEFAULT_BOLD = &FreeMonoBold9pt7b;
+//const GFXfont *DEFAULT_BOLD = &FreeSansBold9pt7b;
 const int textbox_padding = 5;                  // How much padding inside textBox() - used by installGuide()
 FullBounds f = display.bounds.full;             // Quick access to dimensions of full-screen
 
